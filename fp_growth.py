@@ -10,7 +10,11 @@ Basic usage of the module is very simple:
 """
 
 from collections import defaultdict, namedtuple
-from itertools import imap
+try:
+    from itertools import imap
+except ImportError:
+    # for python3
+    imap = map
 
 __author__ = 'Eric Naeseth <eric@naeseth.com>'
 __copyright__ = 'Copyright © 2009 Eric Naeseth'
@@ -31,6 +35,9 @@ def find_frequent_itemsets(transactions, minimum_support, include_support=False)
     If `include_support` is true, yield (itemset, support) pairs instead of
     just the itemsets.
     """
+    # store generator's result in list, so can be accessed again
+    transactions = list(transactions)
+    
     items = defaultdict(lambda: 0) # mapping from items to their supports
 
     # Load the passed-in transactions and count the support that individual
@@ -40,19 +47,19 @@ def find_frequent_itemsets(transactions, minimum_support, include_support=False)
             items[item] += 1
 
     # Remove infrequent items from the item support dictionary.
-    items = dict((item, support) for item, support in items.iteritems()
+    items = dict((item, support) for item, support in items.items()
         if support >= minimum_support)
-
+    
     # Build our FP-tree. Before any transactions can be added to the tree, they
     # must be stripped of infrequent items and their surviving items must be
     # sorted in decreasing order of frequency.
     def clean_transaction(transaction):
-        transaction = filter(lambda v: v in items, transaction)
+        transaction = list(filter(lambda v: v in items, transaction))
         transaction.sort(key=lambda v: items[v], reverse=True)
         return transaction
-
+    
     master = FPTree()
-    for transaction in imap(clean_transaction, transactions):
+    for transaction in map(clean_transaction, transactions):
         master.add(transaction)
 
     def find_with_suffix(tree, suffix):
@@ -136,7 +143,7 @@ class FPTree(object):
         element of the tuple is the item itself, and the second element is a
         generator that will yield the nodes in the tree that belong to the item.
         """
-        for item in self._routes.iterkeys():
+        for item in self._routes.keys():
             yield (item, self.nodes(item))
 
     def nodes(self, item):
@@ -167,15 +174,15 @@ class FPTree(object):
         return (collect_path(node) for node in self.nodes(item))
 
     def inspect(self):
-        print 'Tree:'
+        print('Tree:')
         self.root.inspect(1)
 
-        print
-        print 'Routes:'
+        print()
+        print('Routes:')
         for item, nodes in self.items():
-            print '  %r' % item
+            print('  %r' % item)
             for node in nodes:
-                print '    %r' % node
+                print('    %r' % node)
 
 def conditional_tree_from_paths(paths):
     """Build a conditional FP-tree from the given prefix paths."""
@@ -309,10 +316,10 @@ class FPNode(object):
     @property
     def children(self):
         """The nodes that are children of this node."""
-        return tuple(self._children.itervalues())
+        return tuple(self._children.values())
 
     def inspect(self, depth=0):
-        print ('  ' * depth) + repr(self)
+        print(('  ' * depth) + repr(self))
         for child in self.children:
             child.inspect(depth + 1)
 
@@ -322,37 +329,3 @@ class FPNode(object):
         return "<%s %r (%r)>" % (type(self).__name__, self.item, self.count)
 
 
-if __name__ == '__main__':
-    from optparse import OptionParser
-    import csv
-
-    p = OptionParser(usage='%prog data_file')
-    p.add_option('-s', '--minimum-support', dest='minsup', type='int',
-        help='Minimum itemset support (default: 2)')
-    p.add_option('-n', '--numeric', dest='numeric', action='store_true',
-        help='Convert the values in datasets to numerals (default: false)')
-    p.set_defaults(minsup=2)
-    p.set_defaults(numeric=False)
-
-    options, args = p.parse_args()
-    if len(args) < 1:
-        p.error('must provide the path to a CSV file to read')
-
-    transactions = []
-    with open(args[0]) as database:
-        for row in csv.reader(database):
-            if options.numeric:
-                transaction = []
-                for item in row:
-                    transaction.append(long(item))
-                transactions.append(transaction)
-            else:
-                transactions.append(row)
-
-    result = []
-    for itemset, support in find_frequent_itemsets(transactions, options.minsup, True):
-        result.append((itemset,support))
-
-    result = sorted(result, key=lambda i: i[0])
-    for itemset, support in result:
-        print str(itemset) + ' ' + str(support)
